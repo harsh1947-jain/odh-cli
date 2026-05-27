@@ -2,13 +2,14 @@ package raycluster
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
-	"github.com/lburgazzoli/odh-cli/pkg/resources"
-	"github.com/lburgazzoli/odh-cli/pkg/util/client"
+	"github.com/opendatahub-io/odh-cli/pkg/resources"
+	"github.com/opendatahub-io/odh-cli/pkg/util/client"
 )
 
 // GetClusters returns RayClusters for the given scope. If clusterName is set, namespace must be set.
@@ -19,7 +20,7 @@ func GetClusters(
 	namespace string,
 ) ([]*unstructured.Unstructured, error) {
 	if clusterName != "" && namespace == "" {
-		return nil, fmt.Errorf("namespace must be specified when targeting a specific cluster")
+		return nil, errors.New("namespace must be specified when targeting a specific cluster")
 	}
 
 	if clusterName != "" {

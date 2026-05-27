@@ -7,9 +7,9 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/lburgazzoli/odh-cli/pkg/resources"
-	"github.com/lburgazzoli/odh-cli/pkg/util/client"
-	"github.com/lburgazzoli/odh-cli/pkg/util/jq"
+	"github.com/opendatahub-io/odh-cli/pkg/resources"
+	"github.com/opendatahub-io/odh-cli/pkg/util/client"
+	"github.com/opendatahub-io/odh-cli/pkg/util/jq"
 )
 
 // PreflightCheck represents a single pre-upgrade check result.
@@ -24,7 +24,8 @@ type PreflightCheck struct {
 
 // RunPreUpgradeChecks runs pre-upgrade checks (permissions, cert-manager, codeflare-operator).
 func RunPreUpgradeChecks(ctx context.Context, c client.Client) []PreflightCheck {
-	var checks []PreflightCheck
+	const numChecks = 3
+	checks := make([]PreflightCheck, 0, numChecks)
 
 	// Permission checks: list namespaces and list rayclusters as proxy for required access
 	permOK, permDetails := checkPermissions(ctx, c)
@@ -56,7 +57,7 @@ func RunPreUpgradeChecks(ctx context.Context, c client.Client) []PreflightCheck 
 		Name:     "codeflare-operator",
 		Passed:   cfOK,
 		Message:  cfMsg,
-		Required:  true,
+		Required: true,
 		Help:     `Set codeflare to Removed in your DataScienceCluster before upgrading: oc patch datasciencecluster <name> --type merge -p '{"spec":{"components":{"codeflare":{"managementState":"Removed"}}}}'`,
 	})
 
@@ -77,6 +78,7 @@ func checkPermissions(ctx context.Context, c client.Client) (bool, []string) {
 	} else {
 		details = append(details, "List RayClusters: OK")
 	}
+
 	return errNS == nil && errRC == nil, details
 }
 
@@ -86,7 +88,7 @@ func checkCertManager(ctx context.Context, c client.Client) (bool, string) {
 		return true, "cert-manager CRD found"
 	}
 	if !apierrors.IsNotFound(err) {
-		return true, "could not check cert-manager CRD (skipping)"
+		return false, "could not check cert-manager CRD: " + err.Error()
 	}
 
 	_, err = c.Get(ctx, resources.Namespace.GVR(), "cert-manager")
@@ -94,12 +96,15 @@ func checkCertManager(ctx context.Context, c client.Client) (bool, string) {
 		return true, "cert-manager namespace found"
 	}
 	if !apierrors.IsNotFound(err) {
-		return true, "could not check cert-manager namespace (skipping)"
+		return false, "could not check cert-manager namespace: " + err.Error()
 	}
 
 	_, err = c.Get(ctx, resources.Namespace.GVR(), "openshift-cert-manager")
 	if err == nil {
 		return true, "openshift-cert-manager namespace found"
+	}
+	if !apierrors.IsNotFound(err) {
+		return false, "could not check openshift-cert-manager namespace: " + err.Error()
 	}
 
 	return false, "cert-manager not detected"
@@ -112,7 +117,7 @@ func checkCodeflareOperator(ctx context.Context, c client.Client) (bool, string)
 			return true, "DataScienceCluster CRD not found (OK to proceed)"
 		}
 
-		return true, "Could not check DataScienceCluster (skipping): " + err.Error()
+		return false, "Could not check DataScienceCluster: " + err.Error()
 	}
 
 	dscName, _ := jq.Query[string](dsc, ".metadata.name")

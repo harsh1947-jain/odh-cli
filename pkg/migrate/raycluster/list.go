@@ -5,24 +5,24 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"sigs.k8s.io/yaml"
+
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
-	"github.com/lburgazzoli/odh-cli/pkg/util/client"
-
-	"github.com/lburgazzoli/odh-cli/pkg/util/iostreams"
-	"github.com/lburgazzoli/odh-cli/pkg/util/jq"
-	"sigs.k8s.io/yaml"
+	"github.com/opendatahub-io/odh-cli/pkg/util/client"
+	"github.com/opendatahub-io/odh-cli/pkg/util/iostreams"
+	"github.com/opendatahub-io/odh-cli/pkg/util/jq"
 )
 
 // ClusterInfo holds display info for one RayCluster.
 type ClusterInfo struct {
-	Name              string   `json:"name"`
-	Namespace         string   `json:"namespace"`
-	Status            string   `json:"status"`
-	NumWorkers        int64    `json:"num_workers"`
-	Migrated          bool     `json:"migrated"`
-	MigrationStatus   string   `json:"migration_status"`
-	TLSOAuthComponents []string `json:"tls_oauth_components,omitempty"`
+	Name               string   `json:"name"`
+	Namespace          string   `json:"namespace"`
+	Status             string   `json:"status"`
+	NumWorkers         int64    `json:"numWorkers"`
+	Migrated           bool     `json:"migrated"`
+	MigrationStatus    string   `json:"migrationStatus"`
+	TLSOAuthComponents []string `json:"tlsOauthComponents,omitempty"`
 }
 
 // ListRayClusters lists RayClusters with migration status and writes to io.
@@ -48,6 +48,7 @@ func ListRayClusters(
 
 	if len(clusters) == 0 {
 		io.Errorf("No RayClusters found")
+
 		return nil, nil
 	}
 
@@ -60,7 +61,7 @@ func ListRayClusters(
 		name := rc.GetName()
 		ns := rc.GetNamespace()
 		if ns == "" {
-			ns = "default"
+			ns = DefaultNamespace
 		}
 		io.Errorf("  [%d/%d] Analyzing %s (ns: %s)...", idx+1, total, name, ns)
 
@@ -76,6 +77,7 @@ func ListRayClusters(
 		b, err := yaml.Marshal(infos)
 		if err != nil {
 			io.Errorf("failed to marshal output: %v", err)
+
 			return nil, fmt.Errorf("marshal YAML: %w", err)
 		}
 		io.Fprintf("%s", string(b))
@@ -83,11 +85,14 @@ func ListRayClusters(
 		b, err := json.MarshalIndent(infos, "", "  ")
 		if err != nil {
 			io.Errorf("failed to marshal output: %v", err)
+
 			return nil, fmt.Errorf("marshal JSON: %w", err)
 		}
 		io.Fprintf("%s", string(b))
-	default:
+	case "table", "":
 		printTable(infos, io)
+	default:
+		return nil, fmt.Errorf("unsupported output format: %s", outputFormat)
 	}
 
 	return infos, nil
@@ -97,7 +102,7 @@ func clusterInfoFrom(rc *unstructured.Unstructured) ClusterInfo {
 	name := rc.GetName()
 	ns := rc.GetNamespace()
 	if ns == "" {
-		ns = "default"
+		ns = DefaultNamespace
 	}
 	status, _ := jq.Query[string](rc, ".status.state")
 	if status == "" {
@@ -123,13 +128,13 @@ func clusterInfoFrom(rc *unstructured.Unstructured) ClusterInfo {
 	}
 
 	return ClusterInfo{
-		Name:                name,
-		Namespace:           ns,
-		Status:              status,
-		NumWorkers:          numWorkers,
-		Migrated:            migrated,
-		MigrationStatus:     migrationStatus,
-		TLSOAuthComponents:  components,
+		Name:               name,
+		Namespace:          ns,
+		Status:             status,
+		NumWorkers:         numWorkers,
+		Migrated:           migrated,
+		MigrationStatus:    migrationStatus,
+		TLSOAuthComponents: components,
 	}
 }
 

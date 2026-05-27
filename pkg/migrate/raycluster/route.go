@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/lburgazzoli/odh-cli/pkg/resources"
-	"github.com/lburgazzoli/odh-cli/pkg/util/client"
-	"github.com/lburgazzoli/odh-cli/pkg/util/jq"
+	"github.com/opendatahub-io/odh-cli/pkg/resources"
+	"github.com/opendatahub-io/odh-cli/pkg/util/client"
+	"github.com/opendatahub-io/odh-cli/pkg/util/jq"
 )
 
 // GetClusterRoute returns the dashboard URL for a RayCluster (HTTPS), or empty string if not found.
@@ -22,6 +22,7 @@ func GetClusterRoute(ctx context.Context, c client.Client, clusterName, namespac
 			if err != nil || len(list) == 0 {
 				continue
 			}
+
 			break
 		}
 	}
