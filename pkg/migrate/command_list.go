@@ -53,6 +53,7 @@ func NewListCommand(streams genericiooptions.IOStreams) *ListCommand {
 	registry.MustRegister(&rhbok.RHBOKMigrationAction{})
 	registry.MustRegister(&modelserving.ServerlessToRawAction{})
 	registry.MustRegister(&modelserving.ModelMeshToRawAction{})
+	registry.MustRegister(&modelserving.HardwareProfilesIgnorelistAction{})
 
 	return &ListCommand{
 		SharedOptions: shared,

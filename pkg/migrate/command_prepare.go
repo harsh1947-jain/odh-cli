@@ -48,6 +48,7 @@ func NewPrepareCommand(streams genericiooptions.IOStreams) *PrepareCommand {
 	registry.MustRegister(&rhbok.RHBOKMigrationAction{})
 	registry.MustRegister(&modelserving.ServerlessToRawAction{})
 	registry.MustRegister(&modelserving.ModelMeshToRawAction{})
+	registry.MustRegister(&modelserving.HardwareProfilesIgnorelistAction{})
 
 	return &PrepareCommand{
 		SharedOptions: shared,
