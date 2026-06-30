@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/blang/semver/v4"
@@ -96,7 +97,7 @@ func kueueManagedLabels() map[string]string {
 	}
 }
 
-func newFakeClient(objects []*unstructured.Unstructured) client.Client {
+func newFakeClient(objects []*unstructured.Unstructured, reactors ...k8stesting.Reactor) client.Client {
 	scheme := newScheme()
 
 	dynamicObjs := make([]runtime.Object, len(objects))
@@ -109,6 +110,10 @@ func newFakeClient(objects []*unstructured.Unstructured) client.Client {
 		testListKinds,
 		dynamicObjs...,
 	)
+
+	for _, r := range reactors {
+		dynamicClient.ReactionChain = append([]k8stesting.Reactor{r}, dynamicClient.ReactionChain...)
+	}
 
 	metadataClient := metadatafake.NewSimpleMetadataClient(
 		scheme,
@@ -121,62 +126,24 @@ func newFakeClient(objects []*unstructured.Unstructured) client.Client {
 	})
 }
 
-func newFakeClientWithPatchError(objects []*unstructured.Unstructured) client.Client {
-	scheme := newScheme()
-
-	dynamicObjs := make([]runtime.Object, len(objects))
-	for i, obj := range objects {
-		dynamicObjs[i] = obj
+func patchErrorReactor() k8stesting.Reactor {
+	return &k8stesting.SimpleReactor{
+		Verb:     "patch",
+		Resource: "notebooks",
+		Reaction: func(_ k8stesting.Action) (bool, runtime.Object, error) {
+			return true, nil, errors.New("simulated patch error")
+		},
 	}
-
-	dynamicClient := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(
-		scheme,
-		testListKinds,
-		dynamicObjs...,
-	)
-
-	dynamicClient.PrependReactor("patch", "notebooks", func(_ k8stesting.Action) (bool, runtime.Object, error) {
-		return true, nil, errors.New("simulated patch error")
-	})
-
-	metadataClient := metadatafake.NewSimpleMetadataClient(
-		scheme,
-		kube.ToPartialObjectMetadata(objects...)...,
-	)
-
-	return client.NewForTesting(client.TestClientConfig{
-		Dynamic:  dynamicClient,
-		Metadata: metadataClient,
-	})
 }
 
-func newFakeClientWithListError(objects []*unstructured.Unstructured) client.Client {
-	scheme := newScheme()
-
-	dynamicObjs := make([]runtime.Object, len(objects))
-	for i, obj := range objects {
-		dynamicObjs[i] = obj
+func listErrorReactor() k8stesting.Reactor {
+	return &k8stesting.SimpleReactor{
+		Verb:     "list",
+		Resource: "notebooks",
+		Reaction: func(_ k8stesting.Action) (bool, runtime.Object, error) {
+			return true, nil, errors.New("simulated API server error")
+		},
 	}
-
-	dynamicClient := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(
-		scheme,
-		testListKinds,
-		dynamicObjs...,
-	)
-
-	dynamicClient.PrependReactor("list", "notebooks", func(_ k8stesting.Action) (bool, runtime.Object, error) {
-		return true, nil, errors.New("simulated API server error")
-	})
-
-	metadataClient := metadatafake.NewSimpleMetadataClient(
-		scheme,
-		kube.ToPartialObjectMetadata(objects...)...,
-	)
-
-	return client.NewForTesting(client.TestClientConfig{
-		Dynamic:  dynamicClient,
-		Metadata: metadataClient,
-	})
 }
 
 func newTarget(k8sClient client.Client, opts ...func(*action.Target)) action.Target {
@@ -336,6 +303,45 @@ func TestQueueName_DefaultAndCustom(t *testing.T) {
 	g.Expect(a.queueName()).To(Equal("default"))
 }
 
+func TestRunTask_Validate_InvalidQueueName(t *testing.T) {
+	g := NewWithT(t)
+	ctx := t.Context()
+
+	k8sClient := newFakeClient([]*unstructured.Unstructured{
+		newNamespace("ns1", kueueManagedLabels()),
+	})
+	target := newTarget(k8sClient)
+
+	tests := []struct {
+		name      string
+		queueName string
+	}{
+		{"leading dash", "-invalid"},
+		{"contains spaces", "my queue"},
+		{"too long", strings.Repeat("a", 64)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			a := &AttachKueueLabelAction{QueueName: tt.queueName}
+			runTask := a.Run()
+
+			_, err := runTask.Validate(ctx, target)
+			g.Expect(err).To(HaveOccurred())
+			g.Expect(err.Error()).To(ContainSubstring("invalid --queue-name"))
+		})
+	}
+
+	a := &AttachKueueLabelAction{QueueName: "my queue"}
+	runTask := a.Run()
+
+	_, err := runTask.Execute(ctx, target)
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err.Error()).To(ContainSubstring("invalid --queue-name"))
+}
+
 // --- Validate Tests ---
 
 func TestRunTask_Validate_NoNotebooks(t *testing.T) {
@@ -420,9 +426,9 @@ func TestRunTask_Validate_ListError(t *testing.T) {
 	g := NewWithT(t)
 	ctx := t.Context()
 
-	k8sClient := newFakeClientWithListError([]*unstructured.Unstructured{
+	k8sClient := newFakeClient([]*unstructured.Unstructured{
 		newNamespace("ns1", kueueManagedLabels()),
-	})
+	}, listErrorReactor())
 	target := newTarget(k8sClient)
 
 	a := &AttachKueueLabelAction{}
@@ -688,10 +694,10 @@ func TestRunTask_Execute_PatchError(t *testing.T) {
 	g := NewWithT(t)
 	ctx := t.Context()
 
-	k8sClient := newFakeClientWithPatchError([]*unstructured.Unstructured{
+	k8sClient := newFakeClient([]*unstructured.Unstructured{
 		newNamespace("ns1", kueueManagedLabels()),
 		newNotebook("nb1", "ns1", nil),
-	})
+	}, patchErrorReactor())
 	target := newTarget(k8sClient)
 
 	a := &AttachKueueLabelAction{}
@@ -961,7 +967,16 @@ func TestRunTask_Execute_SingleNotebookTargeting_NotFound(t *testing.T) {
 	result, err := runTask.Execute(ctx, target)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(result).ToNot(BeNil())
-	g.Expect(result.Status.Completed).To(BeTrue())
+
+	hasFailedStep := false
+
+	for _, step := range result.Status.Steps {
+		if step.Status == "Failed" {
+			hasFailedStep = true
+		}
+	}
+
+	g.Expect(hasFailedStep).To(BeTrue())
 
 	otherNb, err := k8sClient.Dynamic().Resource(resources.Notebook.GVR()).
 		Namespace("ns1").Get(context.Background(), "other-nb", metav1.GetOptions{})
@@ -1041,9 +1056,9 @@ func TestRunTask_Execute_ListError(t *testing.T) {
 	g := NewWithT(t)
 	ctx := t.Context()
 
-	k8sClient := newFakeClientWithListError([]*unstructured.Unstructured{
+	k8sClient := newFakeClient([]*unstructured.Unstructured{
 		newNamespace("ns1", kueueManagedLabels()),
-	})
+	}, listErrorReactor())
 	target := newTarget(k8sClient)
 
 	a := &AttachKueueLabelAction{}
@@ -1106,4 +1121,46 @@ func TestRunTask_Execute_ConfirmationCancelled(t *testing.T) {
 		Namespace("ns1").Get(context.Background(), "nb1", metav1.GetOptions{})
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(nb.GetLabels()).ToNot(HaveKey(constants.LabelKueueQueueName))
+}
+
+func TestRunTask_Execute_ConfirmationAccepted(t *testing.T) {
+	g := NewWithT(t)
+	ctx := t.Context()
+
+	k8sClient := newFakeClient([]*unstructured.Unstructured{
+		newNamespace("ns1", kueueManagedLabels()),
+		newNotebook("nb1", "ns1", nil),
+	})
+
+	stdinBuf := bytes.NewBufferString("y\n")
+
+	io := iostreams.NewIOStreams(
+		stdinBuf,
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+	)
+
+	targetVersion := semver.MustParse("3.0.0")
+
+	target := action.Target{
+		Client:        k8sClient,
+		TargetVersion: &targetVersion,
+		DryRun:        false,
+		SkipConfirm:   false,
+		Recorder:      action.NewVerboseRootRecorder(io),
+		IO:            io,
+	}
+
+	a := &AttachKueueLabelAction{}
+	runTask := a.Run()
+
+	result, err := runTask.Execute(ctx, target)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(result).ToNot(BeNil())
+	g.Expect(result.Status.Completed).To(BeTrue())
+
+	nb, err := k8sClient.Dynamic().Resource(resources.Notebook.GVR()).
+		Namespace("ns1").Get(context.Background(), "nb1", metav1.GetOptions{})
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(nb.GetLabels()).To(HaveKeyWithValue(constants.LabelKueueQueueName, "default"))
 }

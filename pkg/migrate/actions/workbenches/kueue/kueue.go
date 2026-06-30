@@ -7,7 +7,6 @@ import (
 
 	"github.com/spf13/pflag"
 
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
@@ -108,10 +107,6 @@ func (a *AttachKueueLabelAction) listNotebooks(
 			Namespace(a.WorkbenchNamespace).
 			Get(ctx, a.WorkbenchName, metav1.GetOptions{})
 		if err != nil {
-			if apierrors.IsNotFound(err) {
-				return nil, nil
-			}
-
 			return nil, fmt.Errorf("getting notebook %s/%s: %w", a.WorkbenchNamespace, a.WorkbenchName, err)
 		}
 

@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/util/validation"
 
 	"github.com/opendatahub-io/odh-cli/pkg/constants"
 	"github.com/opendatahub-io/odh-cli/pkg/migrate/action"
@@ -22,6 +24,10 @@ func (t *runTask) Validate(
 ) (*result.ActionResult, error) {
 	if t.action.WorkbenchName != "" && t.action.WorkbenchNamespace == "" {
 		return nil, errors.New("--workbench-name requires --workbench-namespace")
+	}
+
+	if errs := validation.IsValidLabelValue(t.action.queueName()); len(errs) > 0 {
+		return nil, fmt.Errorf("invalid --queue-name %q: %s", t.action.queueName(), strings.Join(errs, "; "))
 	}
 
 	step := target.Recorder.Child(
@@ -54,6 +60,10 @@ func (t *runTask) Execute(
 ) (*result.ActionResult, error) {
 	if t.action.WorkbenchName != "" && t.action.WorkbenchNamespace == "" {
 		return nil, errors.New("--workbench-name requires --workbench-namespace")
+	}
+
+	if errs := validation.IsValidLabelValue(t.action.queueName()); len(errs) > 0 {
+		return nil, fmt.Errorf("invalid --queue-name %q: %s", t.action.queueName(), strings.Join(errs, "; "))
 	}
 
 	discoverStep := target.Recorder.Child(
