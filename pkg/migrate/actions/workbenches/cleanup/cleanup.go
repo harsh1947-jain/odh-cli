@@ -194,24 +194,6 @@ func deleteResourceIfPresent(
 
 	var err error
 	if namespace != "" {
-		_, err = ri.Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
-	} else {
-		_, err = ri.Get(ctx, name, metav1.GetOptions{})
-	}
-
-	if apierrors.IsNotFound(err) {
-		step.Recordf(stepID, "Already absent: %s", result.StepCompleted, label)
-
-		return true
-	}
-
-	if err != nil {
-		step.Recordf(stepID, "Failed to check %s: %v", result.StepFailed, label, err)
-
-		return false
-	}
-
-	if namespace != "" {
 		err = ri.Namespace(namespace).Delete(ctx, name, metav1.DeleteOptions{})
 	} else {
 		err = ri.Delete(ctx, name, metav1.DeleteOptions{})

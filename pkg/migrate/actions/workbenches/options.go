@@ -64,6 +64,8 @@ func (o *SharedScopeOptions) ListNotebooks(
 // AddScopeFlags registers the shared workbench targeting flags into fs.
 // Guards with fs.Lookup so paired actions that share the same backing
 // struct do not trigger flag-collision panics in RegisterActionFlags.
+// All actions using these flags must share a single SharedScopeOptions
+// instance (see registry.go) so the flag values are visible to every action.
 func AddScopeFlags(opts *SharedScopeOptions, fs *pflag.FlagSet) {
 	if fs.Lookup("workbench-namespace") == nil {
 		fs.StringVar(&opts.WorkbenchNamespace, "workbench-namespace", "",
